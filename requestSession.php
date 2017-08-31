@@ -4,13 +4,16 @@ require __DIR__ . '/vendor/autoload.php';
 use \Curl\Curl;
 
 
-
-
- function request_session_logon($server_address, $username, $password) {
      $curl = new Curl();
      $curl->setOpt(CURLOPT_SSL_VERIFYPEER, false);
      $request_url_path = "/nl/jsp/soaprouter.jsp";
-     $server_address = $server_address. $request_url_path;
+     $server_address = "http://no1010042208156.corp.adobe.com";
+     $server_address = $server_address.$request_url_path;
+
+ function request_session_logon($username, $password) {
+     global $curl;
+     global $server_address;
+     
      
  $request_body = '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:urn="urn:xtk:session">
 						   <soapenv:Header/>
@@ -38,6 +41,50 @@ use \Curl\Curl;
                 }
 
 	}
+        
+        
+        
+    function request_workflows($session_token, $campaign_id) {
+        
+         global $curl;
+        global $server_address;
+        
+	$campaignExp = "[@operation-id]=".$campaign_id;
+        $request_body = '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:urn="urn:xtk:queryDef">
+   <soapenv:Header/>
+   <soapenv:Body><urn:ExecuteQuery>
+   <urn:sessiontoken>___751E19AE-FE93-4AAC-B201-8092D4643054</urn:sessiontoken>
+	    <urn:entity>
+		<queryDef schema="xtk:workflow" operation="select" >
+		     <select>
+		          <node expr="@id"  />
+		          <node expr="@label"  />
+		          <node expr="@state"  />
+		      </select>
+            <where>
+   				 <condition boolOperator="AND" expr="[@operation-id]=636131"/>
+   				<condition boolOperator="AND" expr="@failed = 1" />
+          </where>
+    </queryDef>
+  </urn:entity>
+ </urn:ExecuteQuery>
+   </soapenv:Body>
+</soapenv:Envelope>';
+
+		$curl->setHeader('SOAPAction', 'xtk:queryDef#ExecuteQuery');
+		$curl->post($server_address, $request_body);
+               
+                if ($curl->error) {
+                 echo 'Error: ' . $curl->errorCode . ': ' . $curl->errorMessage . "\n";
+                } else {
+                        $response = xmlToArray($curl->response);
+                        
+                      //  print_r($response);
+                        
+                        return $response["Envelope"]["SOAP-ENV:Body"]["ns:ExecuteQueryResponse"]["pdomOutput"]["ns:workflow-collection"];
+                   	//return $response;          
+                }
+	}  
         
         
      function xmlToArray($xml, $options = array(), $tab = "\t") {
@@ -119,5 +166,9 @@ use \Curl\Curl;
 	}
 
         
-         echo request_session_logon("http://no1010042208156.corp.adobe.com","internal","pparmar");
+     //    echo request_session_logon("internal","pparmar");
+        
+        
+        //___406E1261-78E1-4AFA-B9E1-A4191A53BF41
+    request_workflows("___751E19AE-FE93-4AAC-B201-8092D4643054","636131");
 ?>
