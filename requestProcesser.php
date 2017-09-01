@@ -6,11 +6,28 @@ use \Curl\Curl;
 
      $curl = new Curl();
      $curl->setOpt(CURLOPT_SSL_VERIFYPEER, false);
+     
+    // ---------------My server:----------------------------------
+    
+      $server_address = "no1010042208156.corp.adobe.com";
+    
+    //-----------------------------------------------
+      
+      
+    // ---------------B&D snad box----------------------------------
+      
+     // $server_address = "http://10.255.128.66:8080";
+    
+    //-----------------------------------------------
+      
+      
      $request_url_path = "/nl/jsp/soaprouter.jsp";
-     $server_address = "http://no1010042208156.corp.adobe.com";
      $server_address = $server_address.$request_url_path;
+    
+     
 
- function request_session_logon($username, $password) {
+     
+    function request_session_logon($username, $password) {
      global $curl;
      global $server_address;
      
@@ -49,11 +66,11 @@ use \Curl\Curl;
          global $curl;
         global $server_address;
         
-	$campaignExp = "[@operation-id]=".$campaign_id;
+        $campaignExp = "[@operation-id]=".$campaign_id;
         $request_body = '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:urn="urn:xtk:queryDef">
    <soapenv:Header/>
    <soapenv:Body><urn:ExecuteQuery>
-   <urn:sessiontoken>___751E19AE-FE93-4AAC-B201-8092D4643054</urn:sessiontoken>
+   <urn:sessiontoken>'.$session_token.'</urn:sessiontoken>
 	    <urn:entity>
 		<queryDef schema="xtk:workflow" operation="select" >
 		     <select>
@@ -62,7 +79,7 @@ use \Curl\Curl;
 		          <node expr="@state"  />
 		      </select>
             <where>
-   				 <condition boolOperator="AND" expr="[@operation-id]=636131"/>
+   				<condition boolOperator="AND" expr="'.$campaignExp.'"/>
    				<condition boolOperator="AND" expr="@failed = 1" />
           </where>
     </queryDef>
@@ -78,16 +95,56 @@ use \Curl\Curl;
                  echo 'Error: ' . $curl->errorCode . ': ' . $curl->errorMessage . "\n";
                 } else {
                         $response = xmlToArray($curl->response);
-                        
-                      //  print_r($response);
-                        
+                               
                         return $response["Envelope"]["SOAP-ENV:Body"]["ns:ExecuteQueryResponse"]["pdomOutput"]["ns:workflow-collection"];
-                   	//return $response;          
+                           
                 }
 	}  
         
         
-     function xmlToArray($xml, $options = array(), $tab = "\t") {
+        
+    function request_delivery($session_token, $campaign_id) {
+        
+         global $curl;
+        global $server_address;
+        
+        $campaignExp = "[@operation-id]=".$campaign_id;
+        $request_body = '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:urn="urn:xtk:queryDef">
+   <soapenv:Header/>
+   <soapenv:Body><urn:ExecuteQuery>
+   <urn:sessiontoken>'.$session_token.'</urn:sessiontoken>
+	    <urn:entity>
+		<queryDef schema="nms:delivery" operation="select" >
+                    <select>
+                         <node expr="@id"  />
+                         <node expr="@label"  />
+                         <node expr="[indicators/@successRatio]"  />    
+                    </select>
+                   <where >
+    <condition boolOperator="AND" expr="'.$campaignExp.'"/>
+    <condition expr=" 0.95 > [indicators/@successRatio] "/>
+  </where>
+  </queryDef>
+  </urn:entity>
+ </urn:ExecuteQuery>
+   </soapenv:Body>
+</soapenv:Envelope>';
+
+		$curl->setHeader('SOAPAction', 'xtk:queryDef#ExecuteQuery');
+		$curl->post($server_address, $request_body);
+               
+                if ($curl->error) {
+                 echo 'Error: ' . $curl->errorCode . ': ' . $curl->errorMessage . "\n";
+                } else {
+                        $response = xmlToArray($curl->response);
+                              
+            return $response["Envelope"]["SOAP-ENV:Body"]["ns:ExecuteQueryResponse"]["pdomOutput"]["ns:delivery-collection"];
+                }
+	}
+        
+        
+        
+    function xmlToArray($xml, $options = array(), $tab = "\t") {
 	    $defaults = array(
 	        'namespaceSeparator' => ':',//you may want this to be something other than a colon
 	        'attributePrefix' => '@',   //to distinguish between attributes and nodes with the same name
@@ -165,10 +222,83 @@ use \Curl\Curl;
 	    );
 	}
 
+    
+    function campaign_monitoring($session_token, $campaign_id){
         
-     //    echo request_session_logon("internal","pparmar");
+         
+        $workflowCollection = request_workflows($session_token,$campaign_id);
         
+        //print_r($workflowCollection);
         
-        //___406E1261-78E1-4AFA-B9E1-A4191A53BF41
-    request_workflows("___751E19AE-FE93-4AAC-B201-8092D4643054","636131");
+        if(sizeof($workflowCollection)>0){
+               
+              $responseArray = array( 
+                                         "status" => "Not Ok", 
+                                         "error" => "workflow", 
+                                         "workflows" =>$workflowCollection["workflow"] 
+                                    );
+              
+                             return $responseArray;
+                
+        }
+        else{
+            
+             $deliveryCollection = request_delivery($session_token,$campaign_id);
+            
+            if(sizeof($deliveryCollection)>0){
+                
+                
+              $responseArray = array( 
+                                         "status" => "Not Ok", 
+                                         "error" => "delivery", 
+                                         "deliveries" =>$deliveryCollection["delivery"] 
+                                    );
+              
+                             return $responseArray;
+                
+            }
+                
+        else {
+            
+            
+              $responseArray = array( 
+                                         "status" => "Ok"
+                                    );
+              
+                             return $responseArray;
+            
+        };
+        }
+               
+        
+       
+        
+    }    
+        
+    function processCampaignMonitoring($session_token,$campaigns){
+        $response = array();
+        
+        for($i=0; $i<sizeof($campaigns);$i++)
+        {
+            
+            $response[$campaigns[$i]] = campaign_monitoring($session_token,$campaigns[$i]);
+        }
+        
+        echo json_encode($response);
+                
+        
+    }
+    // ---------------My server:----------------------------------
+   // echo request_session_logon("internal", "pparmar");
+     //campaign_monitoring("___7033BFE7-917E-46D8-9AF7-D72A2FDC46AC","636131");
+    //---------------------------------------------------------------
+    
+    
+    // ----------------B&D sandbox------------------------
+     // echo request_session_logon("parvesh", "parvesh");
+    //  campaign_monitoring("___fa9a561a-3426-468f-86e1-385b0930d63c","20250464");
+    //----------------------------------------------------
+   
+    
+    
 ?>
